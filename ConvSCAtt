@@ -1,0 +1,86 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class CACM(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(CACM, self).__init__()
+        self.fc1 = nn.Conv2d(channel, channel // reduction, 1, bias=False)
+        self.fc2 = nn.Conv2d(channel // reduction, channel, 1, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        B, C, H, W = x.size()
+        y = F.adaptive_avg_pool2d(x, (1, 1))  # Global average pooling
+        y = self.fc1(y)
+        y = F.relu(y)
+        y = self.fc2(y)
+        y = self.sigmoid(y)
+        return x * y  # Scale the input feature map with the attention weights
+
+class LayerNorm(nn.Module):
+    r""" LayerNorm that supports two data formats: channels_last (default) or channels_first. 
+    The ordering of the dimensions in the inputs. channels_last corresponds to inputs with 
+    shape (batch_size, height, width, channels) while channels_first corresponds to inputs 
+    with shape (batch_size, channels, height, width).
+    """
+    def __init__(self, normalized_shape, eps=1e-6, data_format="channels_last"):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+        self.bias = nn.Parameter(torch.zeros(normalized_shape))
+        self.eps = eps
+        self.data_format = data_format
+        if self.data_format not in ["channels_last", "channels_first"]:
+            raise NotImplementedError 
+        self.normalized_shape = (normalized_shape, )
+    
+    def forward(self, x):
+        if self.data_format == "channels_last":
+            return F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+        elif self.data_format == "channels_first":
+            u = x.mean(1, keepdim=True)
+            s = (x - u).pow(2).mean(1, keepdim=True)
+            x = (x - u) / torch.sqrt(s + self.eps)
+            x = self.weight[:, None, None] * x + self.bias[:, None, None]
+            return x
+        
+class ConvSCAtt(nn.Module):
+    def __init__(self, dim, kernel_size, expand_ratio=2):
+        super().__init__()
+        self.norm = LayerNorm(dim, eps=1e-6, data_format="channels_first")
+        self.att = nn.Sequential(
+                nn.Conv2d(dim, dim, 1, groups=dim),
+                nn.GELU(),
+                nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=kernel_size//2, groups=dim)
+        )
+        self.cacm = CACM(dim)
+        self.v = nn.Conv2d(dim, dim, 1, groups=dim)
+        self.proj = nn.Conv2d(dim, dim, 1, groups=dim)
+    def forward(self, x):
+        B, C, H, W = x.shape
+        ### CACM
+        x = self.cacm(x)
+        ### SAFM
+        y = self.norm(x)        
+        y = self.att(y) * self.v(y)
+        y = self.cacm(y)
+        y = self.proj(y)
+        ### ConvSCAtt
+        x = x + y
+        return x
+    
+if __name__ == "__main__":
+    # Move the module to GPU (if available)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Create a test input tensor (batch_size, channels, height, width)
+    x = torch.randn(1, 32, 256, 256).to(device)
+    # Initialize the ConvSCAtt module
+    ConvSCAtt = ConvSCAtt(dim=32, kernel_size=3)
+    print(ConvSCAtt)
+    ConvSCAtt = ConvSCAtt.to(device)
+    # Forward pass
+    output = ConvSCAtt(x)
+
+    # Print the shapes of input and output tensors
+    print("Input tensor shape:", x.shape)
+    print("Output tensor shape:", output.shape)
