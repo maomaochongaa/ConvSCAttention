@@ -1,12 +1,25 @@
-# ConvSCAttention
+<div align="center">
+<h1 align="center">ConvSCAttention</h1>
+
+<h3>CSCA-MobileNet: A Cashmere and Wool Fiber Recognition Network Based on Convolutional Spatial-Channel Attention Mechanism</h3>
+    
+[**Overview**](#overview) | [**Get Started**](#%EF%B8%8Flets-get-started)
+
+</div>
+
+## 🛎️Updates
+* **` February 15th, 2025`**: The code for ConvSCAttention has been organized and uploaded. You are welcome to use them!!
+
+## 🔭Overview
 This repository provides the official implementation of ConvSCAttention.
 
-# Requirements
+## 🗝️Let's Get Started!
+### Requirements
 • PyTorch version >= 1.10.0
 
 • Python version >= 3.9
 
-# Usage Code
+### Usage Code
 ```python
     import torch
     from ConvSCAtt import ConvSCAtt
